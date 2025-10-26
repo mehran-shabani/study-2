@@ -1,0 +1,86 @@
+name: Flutter CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x' # Specify a version constraint for stability
+
+      - name: Install dependencies
+        run: |
+          export PATH="$HOME/flutter/bin:$PATH"
+          cd study_planner
+          flutter pub get
+
+      - name: Analyze project source
+        run: |
+          export PATH="$HOME/flutter/bin:$PATH"
+          cd study_planner
+          flutter analyze
+
+      - name: Run tests
+        run: |
+          export PATH="$HOME/flutter/bin:$PATH"
+          cd study_planner
+          flutter test
+
+      - name: Build APK
+        run: |
+          export PATH="$HOME/flutter/bin:$PATH"
+          cd study_planner
+          flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-apk
+          path: study_planner/build/app/outputs/flutter-apk/app-release.apk
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get project version
+        id: get_version
+        run: echo "version=$(grep 'version: ' study_planner/pubspec.yaml | sed 's/version: //')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+
+      - name: Download APK from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: release-apk
+
+      - name: Upload Release Asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./app-release.apk
+          asset_name: app-release.apk
+          asset_content_type: application/vnd.android.package-archive
